@@ -6,8 +6,6 @@
 
 .program g2_modem
 
-.side_set 3 opt pindirs
-
 ; input mapping
 ; bit 0..7  data
 ; bit 8..15 address
@@ -32,15 +30,15 @@ wait_rw:
     .wrap_target
     in pins, 18
     mov osr, isr ; clears isr
-    out x, 1     ; bit 17 -> x -> read
-    out y, 1     ; bit 16 -> y -> write
+    out x, 1     ; bit 17 -> x -> nRD
+    out y, 1     ; bit 16 -> y -> nWR
     jmp x!=y, read_or_write; read or write
     .wrap
 
 read_or_write:
     mov isr, x ; copy r/w bit into isr
     in osr, 16 ; shift 16 bits into isr from osr
-    push       ; push 16b + r/w bit
+    push block ; push 16b + r/w bit
 
     jmp !y, read
 
@@ -49,8 +47,11 @@ write:
     jmp loop
 
 read:
-    set pindirs, 31 side 7 ; we need to flip 8 data pins here
-    out pins, 8
+    mov osr, ~null  ; set osr to all 1s
+    out pindirs, 8  ; we need to flip 8 data pins here
+
+    pull block      ; get data to osr from pico
+    out pins, 8     ; output data to pins
 
     wait 1 pin nWR_read ; wait for nWR
     set pindirs, 0
@@ -58,51 +59,20 @@ read:
 
 
 % c-sdk {
-static inline void g2_modem_program_init(PIO pio, uint sm, uint offset, uint in_pin_start, uint out_pin_start) {
+static inline void g2_modem_program_init(PIO pio, uint sm, uint offset, uint base_pin) {
     pio_sm_config c = g2_modem_program_get_default_config(offset);
 
-    sm_config_set_in_pins(&c, in_pin_start);
+    sm_config_set_in_pins(&c, base_pin);
 
-    sm_config_set_out_pins(&c, out_pin_start, 8);
-
-    sm_config_set_sideset_pins(&c, out_pin_start + 5);
+    sm_config_set_out_pins(&c, base_pin, 8);
 
     for (uint i = 0; i <8; i++)
-        pio_gpio_init(pio, out_pin_start + i);
+        pio_gpio_init(pio, base_pin + i);
     
-    pio_sm_set_consecutive_pindirs(pio, sm, in_pin_start, 19, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, base_pin, 19, false);
 
     pio_sm_init(pio, sm, offset, &c);
 
-    pio_sm_set_enabled(pio, sm, true);
-}
-%}
-
-.program hello
-
-; Repeatedly get one word of data from the TX FIFO, stalling when the FIFO is
-; empty. Write the least significant bit to the OUT pin group.
-
-loop:
-    pull
-    out pins, 1
-    jmp loop
-
-% c-sdk {
-static inline void hello_program_init(PIO pio, uint sm, uint offset, uint pin) {
-    pio_sm_config c = hello_program_get_default_config(offset);
-
-    // Map the state machine's OUT pin group to one pin, namely the `pin`
-    // parameter to this function.
-    sm_config_set_out_pins(&c, pin, 1);
-    // Set this pin's GPIO function (connect PIO to the pad)
-    pio_gpio_init(pio, pin);
-    // Set the pin direction to output at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
-
-    // Load our configuration, and jump to the start of the program
-    pio_sm_init(pio, sm, offset, &c);
-    // Set the state machine running
     pio_sm_set_enabled(pio, sm, true);
 }
 %}
