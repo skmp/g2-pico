@@ -1,3 +1,5 @@
+### WIP schematic
+![schematic.png](g2_modem_pcb/schematic.png)
 ### Parallel Port Pinout
 
 pin | name (jj) | name (es) | direction | desc (es) | desc (jj)
